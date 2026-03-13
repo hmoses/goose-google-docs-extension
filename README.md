@@ -1,12 +1,8 @@
 # 📄 Google Docs MCP Extension for Goose
 
-> Built by [Harold Moses](https://github.com/hmoses)
+> Created by [@hmoses](https://github.com/hmoses)
 
 A powerful [Model Context Protocol (MCP)](https://modelcontextprotocol.io) extension that gives [Goose](https://github.com/block/goose) full read and write access to your Google Docs and Google Drive.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![MCP](https://img.shields.io/badge/MCP-1.0+-green.svg)](https://modelcontextprotocol.io)
 
 ---
 
@@ -38,44 +34,33 @@ A powerful [Model Context Protocol (MCP)](https://modelcontextprotocol.io) exten
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/hmoses/goose-google-docs-extension
+git clone https://github.com/hmoses/goose-google-docs-extension.git
 cd goose-google-docs-extension
 chmod +x install.sh
 ./install.sh
 ```
 
-The installer will:
-1. Create a Python virtual environment
-2. Install all dependencies
-3. Register the extension in `~/.config/goose/config.yaml`
+---
+
+## 🔑 Google Cloud Setup
+
+1. Create a project at https://console.cloud.google.com/projectcreate
+2. Enable the [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com) and [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+3. Create OAuth credentials (Desktop app type) at https://console.cloud.google.com/auth/clients/create
+4. Download the JSON and move it to: `~/.config/goose/google-docs-extension/credentials.json`
+5. Add your email as a test user at https://console.cloud.google.com/auth/audience
+6. Restart Goose and ask: *"authenticate with google docs"*
 
 ---
 
-## 🔑 Google Cloud Setup (One-Time)
-
-1. **Create a project** → [console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate)
-2. **Enable APIs:**
-   - [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com)
-   - [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
-3. **Create OAuth credentials** → Credentials → Create → Desktop app → Download JSON
-4. **Save credentials:**
-   ```bash
-   mv ~/Downloads/client_secret_*.json ~/.config/goose/google-docs-extension/credentials.json
-   ```
-5. **Add yourself as a test user** → [OAuth Consent Screen](https://console.cloud.google.com/auth/audience)
-6. **Restart Goose** and ask: `"authenticate with google docs"`
-
----
-
-## 💬 Usage Examples
+## 💬 Example Usage
 
 ```
-"Read this Google Doc: https://docs.google.com/document/d/DOC_ID/edit"
-"Create a new Google Doc called 'Meeting Notes'"
-"Find and replace 'Q1' with 'Q2' in my strategy doc"
+"Read this Google Doc: https://docs.google.com/document/d/ID/edit"
+"Create a new doc called Meeting Notes"
+"Replace 'Q1' with 'Q2' in my strategy doc"
 "List all my Google Docs"
 "Share this doc with alice@example.com as a writer"
-"Copy my template and name it 'Project Alpha Brief'"
 ```
 
 ---
@@ -83,11 +68,11 @@ The installer will:
 ## 🔐 Security
 
 - Credentials stored locally at `~/.config/goose/google-docs-extension/`
-- OAuth tokens auto-refresh — login once, works forever
-- Revoke access anytime at [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
+- OAuth tokens auto-refresh
+- Revoke anytime at https://myaccount.google.com/permissions
 
 ---
 
 ## 📄 License
 
-MIT © 2025 [Harold Moses](https://github.com/hmoses)
+MIT © 2025 [@hmoses](https://github.com/hmoses)

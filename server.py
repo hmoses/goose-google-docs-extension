@@ -2,18 +2,21 @@
 """
 Google Docs MCP Extension for Goose
 Provides tools to read, write, create, and manage Google Docs and Drive files.
-
-Author: Harold Moses (@hmoses)
-GitHub: https://github.com/hmoses/goose-google-docs-extension
 """
 
 import json
 import os
 import sys
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
+# ---------------------------------------------------------------------------
+# MCP SDK imports (installed via uv/pip)
+# ---------------------------------------------------------------------------
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -22,12 +25,18 @@ from mcp.types import (
     Tool,
 )
 
+# ---------------------------------------------------------------------------
+# Google API imports
+# ---------------------------------------------------------------------------
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive",
@@ -37,12 +46,17 @@ CONFIG_DIR = Path.home() / ".config" / "goose" / "google-docs-extension"
 TOKEN_FILE = CONFIG_DIR / "token.json"
 CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
 
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
 
 def ensure_config_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_credentials() -> Credentials | None:
+    """Load saved credentials or return None if not found / invalid."""
     ensure_config_dir()
     if TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
@@ -64,6 +78,7 @@ def _save_token(creds: Credentials) -> None:
 
 
 def run_oauth_flow() -> Credentials:
+    """Run the interactive OAuth flow and persist the token."""
     if not CREDENTIALS_FILE.exists():
         raise FileNotFoundError(
             f"credentials.json not found at {CREDENTIALS_FILE}.\n"
@@ -77,10 +92,16 @@ def run_oauth_flow() -> Credentials:
 
 
 def get_or_refresh_credentials() -> Credentials:
+    """Return valid credentials, triggering OAuth if needed."""
     creds = get_credentials()
     if creds is None:
         creds = run_oauth_flow()
     return creds
+
+
+# ---------------------------------------------------------------------------
+# Service builders
+# ---------------------------------------------------------------------------
 
 
 def docs_service():
@@ -91,7 +112,13 @@ def drive_service():
     return build("drive", "v3", credentials=get_or_refresh_credentials())
 
 
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+
 def extract_doc_id(url_or_id: str) -> str:
+    """Accept a full Google Docs URL or a bare document ID."""
     if url_or_id.startswith("http"):
         parsed = urlparse(url_or_id)
         parts = parsed.path.split("/")
@@ -104,6 +131,7 @@ def extract_doc_id(url_or_id: str) -> str:
 
 
 def doc_content_to_text(doc: dict) -> str:
+    """Convert a Google Docs API document body into plain text."""
     lines: list[str] = []
     body = doc.get("body", {})
     for element in body.get("content", []):
@@ -128,6 +156,11 @@ def _err(text: str) -> CallToolResult:
         content=[TextContent(type="text", text=f"❌ Error: {text}")],
         isError=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tool implementations
+# ---------------------------------------------------------------------------
 
 
 def tool_auth_status() -> CallToolResult:
@@ -196,9 +229,7 @@ def tool_create_document(title: str, body_text: str = "") -> CallToolResult:
         doc_id = doc["documentId"]
         if body_text:
             requests = [{"insertText": {"location": {"index": 1}, "text": body_text}}]
-            service.documents().batchUpdate(
-                documentId=doc_id, body={"requests": requests}
-            ).execute()
+            service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         url = f"https://docs.google.com/document/d/{doc_id}/edit"
         return _ok(f"✅ Created document: **{title}**\n🆔 ID: `{doc_id}`\n🔗 URL: {url}")
     except HttpError as e:
@@ -216,9 +247,7 @@ def tool_append_text(doc_id_or_url: str, text: str) -> CallToolResult:
         content = body.get("content", [])
         end_index = content[-1].get("endIndex", 1) - 1 if content else 1
         requests = [{"insertText": {"location": {"index": end_index}, "text": text}}]
-        service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
+        service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         return _ok(f"✅ Appended text to document `{doc_id}`.")
     except HttpError as e:
         return _err(f"Google API error: {e}")
@@ -236,9 +265,7 @@ def tool_replace_text(doc_id_or_url: str, find: str, replace_with: str) -> CallT
                 "replaceText": replace_with,
             }
         }]
-        result = service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
+        result = service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         replies = result.get("replies", [{}])
         count = replies[0].get("replaceAllText", {}).get("occurrencesChanged", 0)
         return _ok(f"✅ Replaced {count} occurrence(s) of '{find}' with '{replace_with}'.")
@@ -253,9 +280,7 @@ def tool_insert_text_at_index(doc_id_or_url: str, text: str, index: int) -> Call
         doc_id = extract_doc_id(doc_id_or_url)
         service = docs_service()
         requests = [{"insertText": {"location": {"index": index}, "text": text}}]
-        service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
+        service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         return _ok(f"✅ Inserted text at index {index} in document `{doc_id}`.")
     except HttpError as e:
         return _err(f"Google API error: {e}")
@@ -268,9 +293,7 @@ def tool_delete_text_range(doc_id_or_url: str, start_index: int, end_index: int)
         doc_id = extract_doc_id(doc_id_or_url)
         service = docs_service()
         requests = [{"deleteContentRange": {"range": {"startIndex": start_index, "endIndex": end_index}}}]
-        service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
+        service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         return _ok(f"✅ Deleted text from index {start_index} to {end_index} in `{doc_id}`.")
     except HttpError as e:
         return _err(f"Google API error: {e}")
@@ -283,9 +306,7 @@ def tool_apply_bold(doc_id_or_url: str, start_index: int, end_index: int) -> Cal
         doc_id = extract_doc_id(doc_id_or_url)
         service = docs_service()
         requests = [{"updateTextStyle": {"range": {"startIndex": start_index, "endIndex": end_index}, "textStyle": {"bold": True}, "fields": "bold"}}]
-        service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
+        service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         return _ok(f"✅ Applied bold to range [{start_index}, {end_index}].")
     except HttpError as e:
         return _err(f"Google API error: {e}")
@@ -301,9 +322,7 @@ def tool_set_heading(doc_id_or_url: str, start_index: int, end_index: int, headi
         doc_id = extract_doc_id(doc_id_or_url)
         service = docs_service()
         requests = [{"updateParagraphStyle": {"range": {"startIndex": start_index, "endIndex": end_index}, "paragraphStyle": {"namedStyleType": heading_level}, "fields": "namedStyleType"}}]
-        service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
+        service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
         return _ok(f"✅ Set heading '{heading_level}' for range [{start_index}, {end_index}].")
     except HttpError as e:
         return _err(f"Google API error: {e}")
@@ -316,9 +335,7 @@ def tool_batch_update(doc_id_or_url: str, requests_json: str) -> CallToolResult:
         doc_id = extract_doc_id(doc_id_or_url)
         requests_list = json.loads(requests_json)
         service = docs_service()
-        result = service.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests_list}
-        ).execute()
+        result = service.documents().batchUpdate(documentId=doc_id, body={"requests": requests_list}).execute()
         return _ok(f"✅ batchUpdate applied.\n\n{json.dumps(result, indent=2)}")
     except json.JSONDecodeError as e:
         return _err(f"Invalid JSON in requests_json: {e}")
@@ -334,12 +351,7 @@ def tool_list_documents(query: str = "", max_results: int = 20) -> CallToolResul
         q = "mimeType='application/vnd.google-apps.document'"
         if query:
             q += f" and name contains '{query}'"
-        results = service.files().list(
-            q=q,
-            pageSize=min(max_results, 100),
-            fields="files(id, name, modifiedTime, webViewLink)",
-            orderBy="modifiedTime desc",
-        ).execute()
+        results = service.files().list(q=q, pageSize=min(max_results, 100), fields="files(id, name, modifiedTime, webViewLink)", orderBy="modifiedTime desc").execute()
         files = results.get("files", [])
         if not files:
             return _ok("No documents found.")
@@ -399,9 +411,7 @@ def tool_share_document(doc_id_or_url: str, email: str, role: str = "writer") ->
         doc_id = extract_doc_id(doc_id_or_url)
         service = drive_service()
         permission = {"type": "user", "role": role, "emailAddress": email}
-        service.permissions().create(
-            fileId=doc_id, body=permission, sendNotificationEmail=True
-        ).execute()
+        service.permissions().create(fileId=doc_id, body=permission, sendNotificationEmail=True).execute()
         return _ok(f"✅ Shared document `{doc_id}` with {email} as **{role}**.")
     except HttpError as e:
         return _err(f"Google API error: {e}")
@@ -426,18 +436,22 @@ def tool_export_document(doc_id_or_url: str, export_format: str = "text/plain") 
         return _err(str(e))
 
 
+# ---------------------------------------------------------------------------
+# Tool registry
+# ---------------------------------------------------------------------------
+
 TOOLS: list[Tool] = [
-    Tool(name="google_docs_auth_status", description="Check whether you are currently authenticated with Google.", inputSchema={"type": "object", "properties": {}, "required": []}),
-    Tool(name="google_docs_authenticate", description="Authenticate with Google via OAuth 2.0. Opens a browser window for login.", inputSchema={"type": "object", "properties": {}, "required": []}),
+    Tool(name="google_docs_auth_status", description="Check whether you are currently authenticated with Google. Run this first before other tools.", inputSchema={"type": "object", "properties": {}, "required": []}),
+    Tool(name="google_docs_authenticate", description="Authenticate with Google via OAuth 2.0. Opens a browser window for login. Must be done once before using any other Google Docs tools. Requires credentials.json to be present at ~/.config/goose/google-docs-extension/credentials.json", inputSchema={"type": "object", "properties": {}, "required": []}),
     Tool(name="google_docs_read", description="Read the full text content of a Google Doc. Accepts a document URL or ID.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string", "description": "Google Doc URL or bare document ID."}}, "required": ["doc_id_or_url"]}),
-    Tool(name="google_docs_get_metadata", description="Get metadata for a Google Doc (title, ID, revision).", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}}, "required": ["doc_id_or_url"]}),
-    Tool(name="google_docs_create", description="Create a new Google Doc with a given title and optional initial text.", inputSchema={"type": "object", "properties": {"title": {"type": "string"}, "body_text": {"type": "string", "default": ""}}, "required": ["title"]}),
+    Tool(name="google_docs_get_metadata", description="Get metadata for a Google Doc (title, ID, revision). Accepts URL or ID.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}}, "required": ["doc_id_or_url"]}),
+    Tool(name="google_docs_create", description="Create a new Google Doc with a given title and optional initial text content.", inputSchema={"type": "object", "properties": {"title": {"type": "string"}, "body_text": {"type": "string", "default": ""}}, "required": ["title"]}),
     Tool(name="google_docs_append_text", description="Append text to the end of a Google Doc.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "text": {"type": "string"}}, "required": ["doc_id_or_url", "text"]}),
     Tool(name="google_docs_replace_text", description="Find and replace all occurrences of text in a Google Doc.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "find": {"type": "string"}, "replace_with": {"type": "string"}}, "required": ["doc_id_or_url", "find", "replace_with"]}),
     Tool(name="google_docs_insert_text", description="Insert text at a specific character index in a Google Doc.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "text": {"type": "string"}, "index": {"type": "integer"}}, "required": ["doc_id_or_url", "text", "index"]}),
     Tool(name="google_docs_delete_range", description="Delete a range of characters in a Google Doc by start/end index.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "start_index": {"type": "integer"}, "end_index": {"type": "integer"}}, "required": ["doc_id_or_url", "start_index", "end_index"]}),
     Tool(name="google_docs_apply_bold", description="Apply bold formatting to a character range in a Google Doc.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "start_index": {"type": "integer"}, "end_index": {"type": "integer"}}, "required": ["doc_id_or_url", "start_index", "end_index"]}),
-    Tool(name="google_docs_set_heading", description="Set paragraph heading level for a range. heading_level: HEADING_1-HEADING_6 or NORMAL_TEXT.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "start_index": {"type": "integer"}, "end_index": {"type": "integer"}, "heading_level": {"type": "string", "enum": ["HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6", "NORMAL_TEXT"]}}, "required": ["doc_id_or_url", "start_index", "end_index", "heading_level"]}),
+    Tool(name="google_docs_set_heading", description="Set the paragraph style (heading level) for a range in a Google Doc.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "start_index": {"type": "integer"}, "end_index": {"type": "integer"}, "heading_level": {"type": "string", "enum": ["HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6", "NORMAL_TEXT"]}}, "required": ["doc_id_or_url", "start_index", "end_index", "heading_level"]}),
     Tool(name="google_docs_batch_update", description="Send a raw Docs API batchUpdate request for advanced edits.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "requests_json": {"type": "string"}}, "required": ["doc_id_or_url", "requests_json"]}),
     Tool(name="google_docs_list", description="List Google Docs in Drive, most recently modified first.", inputSchema={"type": "object", "properties": {"query": {"type": "string", "default": ""}, "max_results": {"type": "integer", "default": 20}}, "required": []}),
     Tool(name="google_docs_copy", description="Create a copy of a Google Doc with a new title.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "new_title": {"type": "string"}}, "required": ["doc_id_or_url", "new_title"]}),
@@ -446,6 +460,10 @@ TOOLS: list[Tool] = [
     Tool(name="google_docs_share", description="Share a Google Doc with an email address.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "email": {"type": "string"}, "role": {"type": "string", "enum": ["reader", "commenter", "writer"], "default": "writer"}}, "required": ["doc_id_or_url", "email"]}),
     Tool(name="google_docs_export", description="Export a Google Doc as plain text or HTML.", inputSchema={"type": "object", "properties": {"doc_id_or_url": {"type": "string"}, "export_format": {"type": "string", "enum": ["text/plain", "text/html"], "default": "text/plain"}}, "required": ["doc_id_or_url"]}),
 ]
+
+# ---------------------------------------------------------------------------
+# Dispatcher
+# ---------------------------------------------------------------------------
 
 DISPATCH: dict[str, Any] = {
     "google_docs_auth_status": lambda args: tool_auth_status(),
@@ -468,11 +486,17 @@ DISPATCH: dict[str, Any] = {
     "google_docs_export": lambda args: tool_export_document(args["doc_id_or_url"], args.get("export_format", "text/plain")),
 }
 
+# ---------------------------------------------------------------------------
+# MCP Server
+# ---------------------------------------------------------------------------
+
 server = Server("google-docs-mcp")
+
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return TOOLS
+
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -486,6 +510,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = _err(f"Unexpected error in '{name}': {e}")
     return result.content
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 async def main():
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
@@ -493,6 +522,7 @@ async def main():
             write_stream,
             server.create_initialization_options(),
         )
+
 
 if __name__ == "__main__":
     import asyncio

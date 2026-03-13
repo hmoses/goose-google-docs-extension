@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Goose Google Docs Extension — Installer
-# Author: Harold Moses (@hmoses) — https://github.com/hmoses
 # =============================================================================
 set -euo pipefail
 
@@ -22,15 +21,9 @@ SERVER_SCRIPT="$SCRIPT_DIR/server.py"
 
 step "Checking requirements"
 if ! command -v python3 &>/dev/null; then
-    error "Python 3 is not installed. Please install Python 3.10 or higher."
+    error "Python 3 is not installed."
 fi
-PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
-PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-if [[ "$PYTHON_MAJOR" -lt 3 ]] || [[ "$PYTHON_MAJOR" -eq 3 && "$PYTHON_MINOR" -lt 10 ]]; then
-    error "Python 3.10+ required. Found: $PYTHON_VERSION"
-fi
-success "Python $PYTHON_VERSION found"
+success "Python found"
 
 step "Setting up virtual environment"
 if command -v uv &>/dev/null; then
@@ -54,34 +47,16 @@ success "Credentials directory: $CREDS_DIR"
 step "Registering extension in Goose config"
 PYTHON_BIN="$VENV_DIR/bin/python"
 mkdir -p "$(dirname "$GOOSE_CONFIG")"
-if [[ ! -f "$GOOSE_CONFIG" ]]; then
-    cat > "$GOOSE_CONFIG" <<EOF
-extensions:
-  google-docs:
-    name: google-docs
-    display_name: Google Docs
-    description: "Read, write, create, and manage Google Docs and Drive files"
-    cmd: "$PYTHON_BIN"
-    args: ["$SERVER_SCRIPT"]
-    enabled: true
-    type: stdio
-    timeout: 300
-    bundled: false
-EOF
+
+if grep -q "google-docs:" "$GOOSE_CONFIG" 2>/dev/null; then
+    warn "Extension already registered."
 else
-    if grep -q "google-docs:" "$GOOSE_CONFIG" 2>/dev/null; then
-        warn "google-docs extension already exists in config — skipping."
-    else
-        if ! grep -q "^extensions:" "$GOOSE_CONFIG"; then
-            echo "" >> "$GOOSE_CONFIG"
-            echo "extensions:" >> "$GOOSE_CONFIG"
-        fi
-        # Insert before first non-extensions top-level key
-        python3 - <<PYEOF
-import re, sys
-with open("$GOOSE_CONFIG") as f:
-    content = f.read()
-new_block = '''
+    if ! grep -q "^extensions:" "$GOOSE_CONFIG"; then
+        echo "" >> "$GOOSE_CONFIG"
+        echo "extensions:" >> "$GOOSE_CONFIG"
+    fi
+    cat >> "$GOOSE_CONFIG" <<YAMLEOF
+
   google-docs:
     name: google-docs
     display_name: Google Docs
@@ -92,23 +67,9 @@ new_block = '''
     type: stdio
     timeout: 300
     bundled: false
-'''
-# Insert after last extension block, before top-level keys
-pattern = r'(^[A-Z_]+:)', re.MULTILINE
-parts = re.split(r'(?m)^(?=[A-Z_])', content, maxsplit=1)
-result = parts[0].rstrip() + new_block + ('\n' + parts[1] if len(parts) > 1 else '')
-with open("$GOOSE_CONFIG", 'w') as f:
-    f.write(result)
-print('done')
-PYEOF
-        success "Registered google-docs extension"
-    fi
+YAMLEOF
+    success "Registered in $GOOSE_CONFIG"
 fi
 
 echo ""
-echo -e "${BOLD}${GREEN}✅ Google Docs Extension installed!${RESET}"
-echo ""
-echo "Next: place credentials.json at:"
-echo "  $CREDS_DIR/credentials.json"
-echo ""
-echo "Then restart Goose and ask: 'authenticate with google docs'"
+echo -e "${BOLD}${GREEN}✅ Installation complete! See README.md for next steps.${RESET}"
