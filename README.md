@@ -1,12 +1,16 @@
 # 📄 Google Docs MCP Extension for Goose
 
-> Created by [@hmoses](https://github.com/hmoses)
+> Built by [Harold Moses (@hmoses)](https://github.com/hmoses)
 
-A powerful [Model Context Protocol (MCP)](https://modelcontextprotocol.io) extension that gives [Goose](https://github.com/block/goose) full read and write access to your Google Docs and Google Drive.
+A powerful [Model Context Protocol (MCP)](https://modelcontextprotocol.io) extension that gives [Goose](https://github.com/block/goose) full read and write access to your Google Docs and Google Drive. Ask Goose to read, edit, create, format, share, and manage your Google Docs — all in natural language.
+
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
 
 ---
 
-## ✨ Features
+## ✨ Features — 18 Tools
 
 | Tool | Description |
 |------|-------------|
@@ -31,25 +35,33 @@ A powerful [Model Context Protocol (MCP)](https://modelcontextprotocol.io) exten
 
 ---
 
-## 🚀 Installation
+## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/hmoses/goose-google-docs-extension.git
+git clone https://github.com/hmoses/goose-google-docs-extension
 cd goose-google-docs-extension
-chmod +x install.sh
-./install.sh
+chmod +x install.sh && ./install.sh
 ```
+
+Then follow the [Google Cloud Setup](#-google-cloud-setup) steps below.
 
 ---
 
-## 🔑 Google Cloud Setup
+## 🔑 Google Cloud Setup (One-Time)
 
-1. Create a project at https://console.cloud.google.com/projectcreate
-2. Enable the [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com) and [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
-3. Create OAuth credentials (Desktop app type) at https://console.cloud.google.com/auth/clients/create
-4. Download the JSON and move it to: `~/.config/goose/google-docs-extension/credentials.json`
-5. Add your email as a test user at https://console.cloud.google.com/auth/audience
-6. Restart Goose and ask: *"authenticate with google docs"*
+1. **Create a project** → https://console.cloud.google.com/projectcreate
+2. **Enable APIs:**
+   - [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com)
+   - [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+3. **Create OAuth credentials** → https://console.cloud.google.com/apis/credentials
+   - Type: **Desktop app**
+   - Download JSON → rename to `credentials.json`
+4. **Place credentials:**
+   ```bash
+   mv ~/Downloads/client_secret_*.json ~/.config/goose/google-docs-extension/credentials.json
+   ```
+5. **Add yourself as test user** → https://console.cloud.google.com/auth/audience
+6. **Restart Goose** and ask: *"authenticate with google docs"*
 
 ---
 
@@ -57,10 +69,12 @@ chmod +x install.sh
 
 ```
 "Read this Google Doc: https://docs.google.com/document/d/ID/edit"
-"Create a new doc called Meeting Notes"
-"Replace 'Q1' with 'Q2' in my strategy doc"
+"Create a new doc called 'Meeting Notes' with today's agenda"
+"Find and replace 'Q1' with 'Q2' in my strategy doc"
 "List all my Google Docs"
 "Share this doc with alice@example.com as a writer"
+"Append a conclusion section to this document"
+"Copy my template and name it 'Project Alpha'"
 ```
 
 ---
@@ -68,11 +82,12 @@ chmod +x install.sh
 ## 🔐 Security
 
 - Credentials stored locally at `~/.config/goose/google-docs-extension/`
-- OAuth tokens auto-refresh
-- Revoke anytime at https://myaccount.google.com/permissions
+- Only requests `documents` and `drive` OAuth scopes
+- No data sent anywhere except Google's APIs
+- Revoke access anytime: https://myaccount.google.com/permissions
 
 ---
 
 ## 📄 License
 
-MIT © 2025 [@hmoses](https://github.com/hmoses)
+MIT © 2025 Harold Moses ([@hmoses](https://github.com/hmoses))
