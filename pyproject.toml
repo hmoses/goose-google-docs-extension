@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "goose-google-docs-mcp"
+version = "1.0.0"
+description = "Google Docs & Drive MCP extension for Goose — read, write, create, and manage Google Docs directly from your AI agent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["goose", "mcp", "google-docs", "google-drive"]
+dependencies = [
+    "mcp>=1.0.0",
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-api-python-client>=2.0.0",
+]
+
+[project.scripts]
+goose-google-docs-mcp = "server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
